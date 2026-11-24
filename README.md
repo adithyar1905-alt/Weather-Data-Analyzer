@@ -20,6 +20,21 @@ uvicorn weather_analyzer.main:app --reload
 The API runs at `http://127.0.0.1:8000`. Interactive API documentation is
 available at `http://127.0.0.1:8000/docs`; health check: `GET /health`.
 
+## Frontend setup
+
+In a second terminal, start the React frontend:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Open the Vite URL shown in the terminal (usually `http://localhost:5173`).
+The frontend connects to the API at `http://127.0.0.1:8000` by default. To use
+a different API address, create `frontend/.env.local` and set
+`VITE_API_URL=http://your-api-host:8000`, then restart the frontend.
+
 ## API endpoints
 
 - `POST /api/analysis/csv` — upload a CSV file as multipart form field `file`.
@@ -32,9 +47,9 @@ available at `http://127.0.0.1:8000/docs`; health check: `GET /health`.
 - `GET /api/weather/forecast?latitude=51.5&longitude=-0.1&days=7` — request
   the forecast directly by coordinates.
 
-The default CORS allowlist includes local development frontends on ports 3000
-and 5173. Override it with the comma-separated `WEATHER_CORS_ORIGINS`
-environment variable.
+The default CORS allowlist includes `localhost` and `127.0.0.1` development
+frontends on ports 3000 and 5173. Override it with the comma-separated
+`WEATHER_CORS_ORIGINS` environment variable.
 
 ## Tests
 
