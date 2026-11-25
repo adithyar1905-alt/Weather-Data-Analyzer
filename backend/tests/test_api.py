@@ -61,7 +61,7 @@ def test_forecast_endpoint_returns_provider_data(monkeypatch) -> None:
         assert params["forecast_days"] == 2
         return {
             "timezone": "Europe/London",
-            "current": {"temperature_2m": 14},
+            "current": {"temperature_2m": 14, "pressure_msl": 1013.2},
             "daily": {
                 "time": ["2025-01-01"],
                 "temperature_2m_max": [15],
@@ -69,6 +69,7 @@ def test_forecast_endpoint_returns_provider_data(monkeypatch) -> None:
                 "precipitation_sum": [1],
                 "weather_code": [3],
                 "wind_speed_10m_max": [12],
+                "relative_humidity_2m_mean": [72],
             },
         }
 
@@ -81,3 +82,43 @@ def test_forecast_endpoint_returns_provider_data(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["location"]["name"] == "London"
     assert response.json()["daily"][0]["temperature_2m_max"] == 15
+    assert response.json()["daily"][0]["relative_humidity_2m_mean"] == 72
+    assert response.json()["current"]["pressure_msl"] == 1013.2
+
+
+def test_history_endpoint_returns_daily_archive_data(monkeypatch) -> None:
+    async def fake_geocode(_client, city):
+        assert city == "Ballari"
+        return {
+            "name": "Ballari",
+            "country": "India",
+            "latitude": 15.1,
+            "longitude": 76.9,
+            "timezone": "Asia/Kolkata",
+        }
+
+    async def fake_get_json(_client, url, params):
+        assert url == weather_api.OPEN_METEO_ARCHIVE_URL
+        assert params["start_date"] <= params["end_date"]
+        return {
+            "timezone": "Asia/Kolkata",
+            "daily": {
+                "time": ["2025-01-01"],
+                "temperature_2m_max": [29],
+                "temperature_2m_min": [20],
+                "precipitation_sum": [0],
+                "weather_code": [1],
+                "wind_speed_10m_max": [12],
+                "relative_humidity_2m_mean": [64],
+            },
+        }
+
+    monkeypatch.setattr(weather_api, "_geocode", fake_geocode)
+    monkeypatch.setattr(weather_api, "_get_json", fake_get_json)
+    response = client.get(
+        "/api/weather/history", params={"city": "Ballari", "days": 30}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["daily"][0]["relative_humidity_2m_mean"] == 64
+    assert response.json()["daily"][0]["temperature_2m_max"] == 29

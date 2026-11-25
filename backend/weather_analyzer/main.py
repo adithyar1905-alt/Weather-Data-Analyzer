@@ -1,5 +1,6 @@
 import csv
 import os
+from datetime import date, timedelta
 from typing import Any
 
 import httpx
@@ -10,13 +11,14 @@ from weather_analyzer.analysis import analyze_csv
 
 OPEN_METEO_GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 app = FastAPI(
     title="Weather Data Analyzer API",
     description=(
         "Analyze weather observation CSV files and retrieve live forecasts "
-        "through the Open-Meteo API."
+        "through the Open-Meteo forecast and archive APIs."
     ),
     version="1.0.0",
 )
@@ -138,13 +140,13 @@ async def get_forecast(
             {
                 "latitude": location["latitude"],
                 "longitude": location["longitude"],
-                "daily": (
-                    "temperature_2m_max,temperature_2m_min,precipitation_sum,"
-                    "weather_code,wind_speed_10m_max"
-                ),
                 "current": (
                     "temperature_2m,relative_humidity_2m,apparent_temperature,"
-                    "precipitation,weather_code,wind_speed_10m"
+                    "precipitation,weather_code,wind_speed_10m,pressure_msl"
+                ),
+                "daily": (
+                    "temperature_2m_max,temperature_2m_min,precipitation_sum,"
+                    "weather_code,wind_speed_10m_max,relative_humidity_2m_mean"
                 ),
                 "temperature_unit": "celsius",
                 "wind_speed_unit": "kmh",
@@ -167,6 +169,7 @@ async def get_forecast(
         "precipitation_sum",
         "weather_code",
         "wind_speed_10m_max",
+        "relative_humidity_2m_mean",
     )
     if any(not isinstance(daily.get(key), list) or len(daily[key]) != len(dates) for key in daily_keys):
         raise HTTPException(
@@ -185,5 +188,66 @@ async def get_forecast(
             "temperature": "°C",
             "precipitation": "mm",
             "wind_speed": "km/h",
+            "pressure": "hPa",
         },
+    }
+
+
+@app.get("/api/weather/history", tags=["weather"])
+async def get_weather_history(
+    city: str = Query(min_length=1, max_length=100),
+    days: int = Query(default=30, ge=1, le=365),
+) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        location = await _geocode(client, city)
+        end_date = date.today() - timedelta(days=5)
+        start_date = end_date - timedelta(days=days - 1)
+        payload = await _get_json(
+            client,
+            OPEN_METEO_ARCHIVE_URL,
+            {
+                "latitude": location["latitude"],
+                "longitude": location["longitude"],
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "daily": (
+                    "temperature_2m_max,temperature_2m_min,precipitation_sum,"
+                    "weather_code,wind_speed_10m_max,relative_humidity_2m_mean"
+                ),
+                "temperature_unit": "celsius",
+                "wind_speed_unit": "kmh",
+                "precipitation_unit": "mm",
+                "timezone": location["timezone"] or "auto",
+            },
+        )
+
+    daily = payload.get("daily")
+    if not isinstance(daily, dict):
+        raise HTTPException(
+            status_code=502, detail="Weather data provider response is missing history data."
+        )
+    dates = daily.get("time", [])
+    daily_keys = (
+        "temperature_2m_max",
+        "temperature_2m_min",
+        "precipitation_sum",
+        "weather_code",
+        "wind_speed_10m_max",
+        "relative_humidity_2m_mean",
+    )
+    if not isinstance(dates, list) or any(
+        not isinstance(daily.get(key), list) or len(daily[key]) != len(dates)
+        for key in daily_keys
+    ):
+        raise HTTPException(
+            status_code=502, detail="Weather data provider returned incomplete history data."
+        )
+    return {
+        "location": location,
+        "timezone": payload.get("timezone"),
+        "daily": [
+            {"date": day, **{key: daily[key][index] for key in daily_keys}}
+            for index, day in enumerate(dates)
+        ],
+        "units": {"temperature": "°C", "precipitation": "mm", "wind_speed": "km/h"},
     }

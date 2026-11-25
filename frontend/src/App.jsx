@@ -21,14 +21,44 @@ const WEATHER_CODES = {
   71: ["Light snow", "🌨️"],
   73: ["Snow", "🌨️"],
   75: ["Heavy snow", "❄️"],
+  77: ["Snow grains", "🌨️"],
   80: ["Rain showers", "🌦️"],
   81: ["Showers", "🌧️"],
   82: ["Heavy showers", "⛈️"],
+  85: ["Snow showers", "🌨️"],
+  86: ["Heavy snow showers", "❄️"],
   95: ["Thunderstorm", "⛈️"],
+  96: ["Thunderstorm with hail", "⛈️"],
+  99: ["Thunderstorm with heavy hail", "⛈️"],
 };
 
 function weatherLabel(code) {
   return WEATHER_CODES[code] || ["Conditions", "🌡️"];
+}
+
+function weatherType(code) {
+  if ([0, 1].includes(code)) return "clear";
+  if ([2, 3].includes(code)) return "cloudy";
+  if ([45, 48].includes(code)) return "fog";
+  if ([71, 73, 75, 77, 85, 86].includes(code)) return "snow";
+  if ([95, 96, 99].includes(code)) return "storm";
+  if ([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)) return "rain";
+  return "cloudy";
+}
+
+function WeatherVisual({ code, compact = false }) {
+  const type = weatherType(code);
+  return (
+    <div className={`weather-visual weather-${type}${compact ? " compact" : ""}`} aria-hidden="true">
+      <span className="visual-sun" />
+      <span className="visual-cloud cloud-back" />
+      <span className="visual-cloud cloud-front" />
+      <span className="visual-rain">{[0, 1, 2, 3, 4, 5].map((drop) => <i key={drop} />)}</span>
+      <span className="visual-snow">{[0, 1, 2, 3, 4, 5].map((flake) => <i key={flake} />)}</span>
+      <span className="visual-fog">{[0, 1, 2].map((layer) => <i key={layer} />)}</span>
+      <span className="visual-lightning" />
+    </div>
+  );
 }
 
 function formatDay(value) {
@@ -163,6 +193,194 @@ function MetricCard({ label, value, unit, icon, tone, helper }) {
   );
 }
 
+function DashboardOverview({ forecast, current, chartPoints, city, setCity, onSearch, forecastLoading, onUpload }) {
+  const days = forecast?.daily || [];
+  const totals = days.reduce(
+    (result, day) => {
+      const type = weatherType(day.weather_code);
+      if (type === "clear") result.clear += 1;
+      else if (type === "rain" || type === "storm") result.rain += 1;
+      else result.cloudy += 1;
+      return result;
+    },
+    { clear: 0, cloudy: 0, rain: 0 },
+  );
+  const share = (count) => (days.length ? Math.round((count / days.length) * 100) : null);
+  const location = forecast?.location;
+  const condition = current ? weatherLabel(current.weather_code)[0] : null;
+
+  return (
+    <section className={`dashboard-overview${forecast ? " has-forecast" : ""}`} aria-label="Weather dashboard">
+      <div className="dashboard-title">
+        <div>
+          <span className="dashboard-eyebrow">WEATHER WORKSPACE</span>
+          <h1>Weather <span>Data Analyzer</span></h1>
+          <p>Explore current conditions and the forecast for a location.</p>
+        </div>
+        <div className="dashboard-actions">
+          <form className="city-search dashboard-city-search" onSubmit={onSearch}>
+            <Icon name="search" size={17} />
+            <input aria-label="Search city or location" placeholder="Search city or location..." value={city} onChange={(event) => setCity(event.target.value)} />
+            <button type="submit" disabled={forecastLoading} aria-label="Search weather">
+              {forecastLoading ? <span className="spinner small" /> : <Icon name="arrow" size={17} />}
+            </button>
+          </form>
+          <button className="upload-button dashboard-upload" onClick={onUpload}>
+            <Icon name="upload" size={16} /> Import CSV
+          </button>
+        </div>
+      </div>
+
+      {forecast ? (
+        <div className="dashboard-location-line">
+          <span><Icon name="pin" size={16} /> {location.name}{location.country ? `, ${location.country}` : ""}</span>
+          <span className="dashboard-live"><i /> Live forecast</span>
+        </div>
+      ) : (
+        <div className="dashboard-search-card">
+          <WeatherVisual code={1} />
+          <div>
+            <strong>Start with a location</strong>
+            <p>Search a city above to load live conditions and forecast insights. Values stay empty until real data is available.</p>
+          </div>
+        </div>
+      )}
+
+      <div className="dashboard-metrics">
+        <MetricCard
+          label="Current temperature"
+          value={current ? Math.round(current.temperature_2m) : "—"}
+          unit={current ? "°C" : ""}
+          icon="sun"
+          tone="orange"
+          helper={condition || "Search a location"}
+        />
+        <MetricCard
+          label="Humidity"
+          value={current ? current.relative_humidity_2m : "—"}
+          unit={current ? "%" : ""}
+          icon="drop"
+          tone="blue"
+          helper={current ? "Current relative humidity" : "No live reading"}
+        />
+        <MetricCard
+          label="Wind speed"
+          value={current ? current.wind_speed_10m : "—"}
+          unit={current ? "km/h" : ""}
+          icon="wind"
+          tone="teal"
+          helper={current ? "At the selected location" : "No live reading"}
+        />
+        <MetricCard
+          label="Today's high / low"
+          value={forecast?.daily[0] ? `${Math.round(forecast.daily[0].temperature_2m_max)}° / ${Math.round(forecast.daily[0].temperature_2m_min)}°` : "—"}
+          unit=""
+          icon="sun"
+          tone="green"
+          helper="Forecast temperature"
+        />
+      </div>
+
+      <div className="dashboard-main-grid">
+        <article className="dashboard-panel trends-panel">
+          <div className="dashboard-panel-heading">
+            <div><span className="dashboard-panel-icon"><Icon name="chart" size={17} /></span><div><h2>Weather trends</h2><p>Daily average temperature</p></div></div>
+            {forecast && <span className="dashboard-period">{days.length} days</span>}
+          </div>
+          {forecast ? (
+            <TemperatureChart points={chartPoints} />
+          ) : (
+            <EmptyState icon="chart" title="No trend data yet" description="Search a city to see forecast temperatures here." />
+          )}
+        </article>
+
+        <article className="dashboard-panel location-panel">
+          <div className="dashboard-panel-heading">
+            <div><span className="dashboard-panel-icon pin"><Icon name="pin" size={17} /></span><div><h2>Location overview</h2><p>{location ? "Current conditions at this location" : "Location details appear after a search"}</p></div></div>
+          </div>
+          {forecast ? (
+            <div className="location-overview">
+              <div className={`location-weather-art weather-art-${weatherType(current.weather_code)}`}>
+                <WeatherVisual code={current.weather_code} />
+                <span>{condition}</span>
+              </div>
+              <div className="location-facts">
+                <div><span>Feels like</span><strong>{Math.round(current.apparent_temperature)}°C</strong></div>
+                <div><span>Wind speed</span><strong>{current.wind_speed_10m} km/h</strong></div>
+                <div><span>Humidity</span><strong>{current.relative_humidity_2m}%</strong></div>
+                <div><span>Precipitation</span><strong>{current.precipitation} mm</strong></div>
+              </div>
+            </div>
+          ) : (
+            <EmptyState icon="pin" title="Choose a location" description="Search for a city to see its current weather details." />
+          )}
+        </article>
+      </div>
+
+      <div className="dashboard-bottom-grid">
+        <article className="dashboard-panel insights-panel">
+          <div className="dashboard-panel-heading">
+            <div><span className="dashboard-panel-icon insight"><Icon name="sun" size={17} /></span><div><h2>Weather insights</h2><p>Based on the forecast shown</p></div></div>
+          </div>
+          {forecast ? (
+            <div className="insight-list">
+              <div className="insight-row"><WeatherVisual code={current.weather_code} compact /><div><strong>{condition} conditions</strong><span>Current conditions in {location.name}.</span></div></div>
+              <div className="insight-row"><span className="insight-symbol temperature"><Icon name="sun" size={17} /></span><div><strong>Daily temperature range</strong><span>{Math.round(days[0].temperature_2m_min)}° to {Math.round(days[0].temperature_2m_max)}°C today.</span></div></div>
+              <div className="insight-row"><span className="insight-symbol rain"><Icon name="drop" size={16} /></span><div><strong>Precipitation outlook</strong><span>{days[0].precipitation_sum} mm expected today.</span></div></div>
+            </div>
+          ) : (
+            <EmptyState icon="sun" title="Insights need weather data" description="Search a city to see a concise summary of its forecast." />
+          )}
+        </article>
+
+        <article className="dashboard-panel recent-panel">
+          <div className="dashboard-panel-heading">
+            <div><span className="dashboard-panel-icon recent"><Icon name="clock" size={17} /></span><div><h2>Upcoming forecast</h2><p>Daily outlook from the provider</p></div></div>
+          </div>
+          {forecast ? (
+            <div className="recent-table-wrap">
+              <table className="recent-table">
+                <thead><tr><th>Date</th><th>Conditions</th><th>High / low</th><th>Rain</th></tr></thead>
+                <tbody>{days.slice(0, 5).map((day) => (
+                  <tr key={day.date}>
+                    <td>{formatDay(day.date)}</td>
+                    <td><span className="recent-condition"><WeatherVisual code={day.weather_code} compact />{weatherLabel(day.weather_code)[0]}</span></td>
+                    <td>{Math.round(day.temperature_2m_max)}° / {Math.round(day.temperature_2m_min)}°</td>
+                    <td>{day.precipitation_sum} mm</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState icon="clock" title="No forecast to show" description="Upcoming days will appear here after you search a city." />
+          )}
+        </article>
+
+        <article className="dashboard-panel stats-panel">
+          <div className="dashboard-panel-heading">
+            <div><span className="dashboard-panel-icon stats"><Icon name="grid" size={17} /></span><div><h2>Forecast mix</h2><p>Share of days in this forecast</p></div></div>
+          </div>
+          {forecast ? (
+            <div className="forecast-mix">
+              {[
+                ["Clear", totals.clear, "clear"],
+                ["Cloudy", totals.cloudy, "cloudy"],
+                ["Rain / storm", totals.rain, "rain"],
+              ].map(([label, count, type]) => (
+                <div className="mix-row" key={label}>
+                  <span>{label}</span><div className="mix-track"><i className={`mix-fill ${type}`} style={{ width: `${share(count)}%` }} /></div><strong>{share(count)}%</strong>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState icon="grid" title="No forecast statistics" description="The mix is calculated from real daily forecast conditions." />
+          )}
+        </article>
+      </div>
+    </section>
+  );
+}
+
 function EmptyState({ icon, title, description }) {
   return (
     <div className="empty-state">
@@ -173,11 +391,12 @@ function EmptyState({ icon, title, description }) {
   );
 }
 
-function Sidebar({ activePage, onPageChange }) {
+function Sidebar({ activePage, onPageChange, onUpload }) {
   const links = [
-    { id: "overview", label: "Overview", icon: "grid" },
+    { id: "overview", label: "Dashboard", icon: "grid" },
     { id: "forecast", label: "Live forecast", icon: "sun" },
-    { id: "analysis", label: "CSV analysis", icon: "chart" },
+    { id: "analysis", label: "Data analysis", icon: "chart" },
+    { id: "upload", label: "CSV upload", icon: "upload" },
   ];
   return (
     <aside className="sidebar">
@@ -191,12 +410,12 @@ function Sidebar({ activePage, onPageChange }) {
           <button
             className={`nav-link ${activePage === link.id ? "active" : ""}`}
             key={link.id}
-            onClick={() => onPageChange(link.id)}
-            aria-current={activePage === link.id ? "page" : undefined}
+            onClick={() => link.id === "upload" ? onUpload() : onPageChange(link.id)}
+            aria-current={activePage === link.id || (link.id === "upload" && activePage === "analysis") ? "page" : undefined}
           >
             <Icon name={link.icon} size={18} />
             {link.label}
-            {link.id === "analysis" && <span className="nav-new">CSV</span>}
+            {link.id === "upload" && <span className="nav-new">CSV</span>}
           </button>
         ))}
       </nav>
@@ -246,7 +465,7 @@ function App() {
     return [];
   }, [analysis, forecast]);
 
-  async function loadForecast(event, daysOverride = forecastDays) {
+  async function loadForecast(event, daysOverride = forecastDays, navigateToForecast = true) {
     event?.preventDefault();
     const place = city.trim();
     if (!place) {
@@ -262,7 +481,7 @@ function App() {
       if (requestId !== requestSequence.current) return;
       setForecast(result);
       setAnalysis(null);
-      setActivePage("forecast");
+      if (navigateToForecast) setActivePage("forecast");
     } catch (error) {
       if (requestId === requestSequence.current) setForecastError(error.message);
     } finally {
@@ -294,6 +513,7 @@ function App() {
       if (requestId !== requestSequence.current) return;
       setAnalysis(result);
       setForecast(null);
+      setActivePage("analysis");
     } catch (error) {
       if (requestId === requestSequence.current) setAnalysisError(error.message);
     } finally {
@@ -310,14 +530,14 @@ function App() {
 
   const pageTitle =
     activePage === "analysis"
-      ? "Weather analysis"
+      ? "Data analysis"
       : activePage === "forecast"
-        ? "Local forecast"
-        : "Overview";
+        ? "Live forecast"
+        : "Dashboard";
 
   return (
     <div className="app-shell">
-      <Sidebar activePage={activePage} onPageChange={setActivePage} />
+      <Sidebar activePage={activePage} onPageChange={setActivePage} onUpload={() => fileInput.current?.click()} />
       <main className="main-area">
         <header className="topbar">
           <div className="breadcrumb"><span>Workspace</span><span className="crumb-slash">/</span><strong>{pageTitle}</strong></div>
@@ -329,7 +549,29 @@ function App() {
         </header>
 
         <div className="content">
-          <section className="welcome-row">
+          <input ref={fileInput} className="visually-hidden" type="file" accept=".csv,text/csv" onChange={onFileChange} aria-label="Choose a weather CSV file" />
+
+          {forecastError && (
+            <div className="alert error-alert" role="alert">
+              <span>{forecastError}</span>
+              <button aria-label="Dismiss error" onClick={() => setForecastError("")}>×</button>
+            </div>
+          )}
+
+          {activePage === "overview" && (
+            <DashboardOverview
+              forecast={forecast}
+              current={current}
+              chartPoints={chartPoints}
+              city={city}
+              setCity={setCity}
+              onSearch={(event) => loadForecast(event, forecastDays, false)}
+              forecastLoading={forecastLoading}
+              onUpload={() => fileInput.current?.click()}
+            />
+          )}
+
+          {activePage !== "overview" && <section className="welcome-row">
             <div>
               <div className="eyebrow"><span className="eyebrow-line" /> YOUR WEATHER, IN CONTEXT</div>
               <h1>A clearer view of <span>the weather.</span></h1>
@@ -347,16 +589,9 @@ function App() {
                 {forecastLoading ? <span className="spinner small" /> : <Icon name="arrow" size={17} />}
               </button>
             </form>
-          </section>
+          </section>}
 
-          {forecastError && (
-            <div className="alert error-alert" role="alert">
-              <span>{forecastError}</span>
-              <button aria-label="Dismiss error" onClick={() => setForecastError("")}>×</button>
-            </div>
-          )}
-
-          <nav className="page-tabs" aria-label="Dashboard views">
+          {activePage !== "overview" && <nav className="page-tabs" aria-label="Dashboard views">
             {[
               ["overview", "Overview"],
               ["forecast", "Live forecast"],
@@ -374,9 +609,9 @@ function App() {
             ))}
             <span className="tab-spacer" />
             <span className="updated-note"><Icon name="clock" size={14} /> {forecast ? `Updated ${formatClock(current?.time)}` : "Ready when you are"}</span>
-          </nav>
+          </nav>}
 
-          {(activePage === "overview" || activePage === "forecast") && (
+          {activePage === "forecast" && (
             <section className="weather-section" aria-label="Current weather and forecast">
               {forecast ? (
                 <>
@@ -397,7 +632,12 @@ function App() {
                       <div className="weather-detail"><span className="detail-icon rain"><Icon name="drop" size={17} /></span><div><small>Precipitation</small><strong>{current.precipitation}<em>mm</em></strong></div></div>
                       <div className="weather-detail"><span className="detail-icon sun"><Icon name="sun" size={17} /></span><div><small>High / low today</small><strong>{forecast.daily[0]?.temperature_2m_max}° <em>/ {forecast.daily[0]?.temperature_2m_min}°</em></strong></div></div>
                     </div>
-                    <div className="weather-art" aria-hidden="true"><div className="weather-orbit orbit-one" /><div className="weather-orbit orbit-two" /><span>{currentCondition[1]}</span><i /></div>
+                    <div className={`weather-art weather-art-${weatherType(current.weather_code)}`}>
+                      <div className="weather-orbit orbit-one" />
+                      <div className="weather-orbit orbit-two" />
+                      <WeatherVisual code={current.weather_code} />
+                      <i />
+                    </div>
                   </div>
                   <div className="section-heading forecast-heading">
                     <div><span className="section-kicker">A LITTLE LOOK AHEAD</span><h2>Coming up</h2></div>
@@ -409,10 +649,9 @@ function App() {
                   </div>
                   <div className="forecast-grid">
                     {forecast.daily.map((day) => {
-                      const [label, emoji] = weatherLabel(day.weather_code);
                       return <article className="forecast-card" key={day.date}>
                         <span className="forecast-day">{formatDay(day.date)}</span>
-                        <span className="forecast-emoji" aria-label={label}>{emoji}</span>
+                        <WeatherVisual code={day.weather_code} compact />
                         <div className="forecast-range"><strong>{Math.round(day.temperature_2m_max)}°</strong><span>{Math.round(day.temperature_2m_min)}°</span></div>
                         <div className="forecast-rain"><Icon name="drop" size={13} /> {day.precipitation_sum} mm</div>
                       </article>;
@@ -437,14 +676,13 @@ function App() {
             </section>
           )}
 
-          {(activePage === "overview" || activePage === "analysis") && (
+          {activePage === "analysis" && (
             <section className="analysis-section" aria-label="CSV weather analysis">
               <div className="section-heading analysis-heading">
                 <div><span className="section-kicker">YOUR OWN OBSERVATIONS</span><h2>Weather insights</h2><p className="section-description">A fresh perspective on the data you’ve collected.</p></div>
                 <button className="upload-button" onClick={() => fileInput.current?.click()} disabled={analysisLoading}>
                   {analysisLoading ? <><span className="spinner small" /> Analyzing</> : <><Icon name="upload" size={17} /> Upload CSV</>}
                 </button>
-                <input ref={fileInput} className="visually-hidden" type="file" accept=".csv,text/csv" onChange={onFileChange} aria-label="Choose a weather CSV file" />
               </div>
 
               {analysisError && <div className="alert error-alert compact" role="alert"><span>{analysisError}</span><button aria-label="Dismiss error" onClick={() => setAnalysisError("")}>×</button></div>}

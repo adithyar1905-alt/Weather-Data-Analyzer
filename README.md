@@ -1,9 +1,10 @@
 # Weather Data Analyzer
 
 A Python backend for analyzing weather observations from CSV files and retrieving
-live forecasts. CSV analysis includes temperature, humidity, rainfall, daily
-series, temperature trends, and comparisons between locations. Live forecasts
-are provided by [Open-Meteo](https://open-meteo.com/) and do not require an API key.
+live forecasts and historical archives. CSV analysis includes temperature,
+humidity, rainfall, daily series, temperature trends, and comparisons between
+locations. Weather data is provided by [Open-Meteo](https://open-meteo.com/)
+and does not require an API key.
 
 ## Backend setup
 
@@ -46,6 +47,8 @@ a different API address, create `frontend/.env.local` and set
   current conditions and up to 16 days of forecast data.
 - `GET /api/weather/forecast?latitude=51.5&longitude=-0.1&days=7` — request
   the forecast directly by coordinates.
+- `GET /api/weather/history?city=London&days=30` — retrieve up to 365 days of
+  archived daily observations for a city.
 
 The default CORS allowlist includes `localhost` and `127.0.0.1` development
 frontends on ports 3000 and 5173. Override it with the comma-separated
